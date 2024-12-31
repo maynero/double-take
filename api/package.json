@@ -52,7 +52,6 @@
     "socket.io": "^4.6.2",
     "traverse": "^0.6.6",
     "uuid": "^9.0.0",
-    "winston": "^3.7.2",
-    "@immich/sdk": "^1.123.0"
+    "winston": "^3.7.2"
   }
 }
