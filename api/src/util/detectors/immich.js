@@ -16,13 +16,13 @@ const generateHeaders = () => {
   };
 };
 
-const uploadImage = async (file) => {
+const uploadImage = async (file, dateGroup) => {
   const formData = new FormData();
   formData.append('assetData', fs.createReadStream(file));
   formData.append('deviceId', 'double-take');
   formData.append('deviceAssetId', `double-take-${randomUUID()}`);
-  formData.append('fileCreatedAt', '1999-01-01T00:00:00.000Z');
-  formData.append('fileModifiedAt', '1999-01-01T00:00:00.000Z');
+  formData.append('fileCreatedAt', dateGroup);
+  formData.append('fileModifiedAt', dateGroup);
 
   const requestConfig = {
     method: 'post',
@@ -109,6 +109,8 @@ const deleteAssets = async (faceIds) => {
       force: true,
       ids: faceIds,
     },
+  }).catch((e) => {
+    console.warn(`Unable to delete: ${e.message}`);
   });
 };
 
@@ -119,43 +121,34 @@ function sleep(time) {
 }
 
 const recognize = async ({ key }) => {
-  const asset = await uploadImage(key);
+  let faces;
+  const asset = await uploadImage(key, IMMICH.RECOGNIZE_DATE_GROUP);
   await sleep(5000);
-  const faces = await getFaces(asset.data.id);
-  const [face] = faces.data;
-  let confidence = 0;
-  let userId = '';
 
-  if (face.person) {
-    confidence = 1;
-    userId = face.person.name;
+  for (let i = 0; i < 10; i++) {
+    faces = await getFaces(asset.data.id);
+
+    if (faces.data.length >= 1) {
+      break;
+    }
+
+    // Wait 1000ms before retrying
+    await sleep(1000);
   }
 
-  return {
-    data: {
-      status: 200,
-      success: true,
-      predictions: [
-        {
-          confidence,
-          userid: userId,
-          x_min: face.boundingBoxX1,
-          y_min: face.boundingBoxY1,
-          x_max: face.boundingBoxX2,
-          y_max: face.boundingBoxY2,
-        },
-      ],
-    },
-  };
+  // Delete the image in immich after identifying the face
+  if (IMMICH.DELETE_ON_RECOGNIZE) await deleteAssets([asset.data.id]);
+
+  return faces;
 };
 
 const train = async ({ name, key }) => {
   let face;
   let person;
-  const asset = await uploadImage(key);
+  const asset = await uploadImage(key, IMMICH.TRAIN_DATE_GROUP);
 
   // Faces are determined automatically
-  // Retry the API call until faces are detected
+  // Retry API call until faces are detected
   for (let i = 0; i < 10; i++) {
     const faces = await getFaces(asset.data.id);
 
@@ -169,21 +162,29 @@ const train = async ({ name, key }) => {
   }
 
   // Add handling if no face detected
+  if (face) {
+    const persons = await getPersons(name);
 
-  const persons = await getPersons(name);
+    if (persons.data.length >= 1) {
+      [person] = persons.data;
+    } else {
+      person = (await createPerson(name)).data;
+    }
 
-  if (persons.data.length >= 1) {
-    [person] = persons.data;
-  } else {
-    person = (await createPerson(name)).data;
+    await assignFace(face.id, person.id);
+    return asset;
   }
 
-  await assignFace(face.id, person.id);
-
-  return asset;
+  return {
+    status: 500,
+    data: {
+      id: asset.data.id,
+      error: 'No face found in the image',
+    },
+  };
 };
 
-const remove = ({ ids = [] }) => {
+const remove = async ({ ids = [] }) => {
   const db = database.connect();
   const faceIds = !ids.length
     ? db
@@ -202,44 +203,40 @@ const remove = ({ ids = [] }) => {
         .all(ids)
         .map((obj) => obj.faceId);
 
-  if (faceIds.length) return deleteAssets(faceIds);
+  if (faceIds.length) await deleteAssets(faceIds);
 };
 
 const normalize = ({ camera, data }) => {
-  if (!data.success) {
-    if (data.code === 500 && data.error === 'No face found in image') {
-      console.log('immich machine learning found no face in the image');
-      return [];
-    }
-    console.warn('unexpected ai.server data');
+  if (!data.length) {
+    console.log('immich found no face in the image');
     return [];
   }
+
   const { MATCH, UNKNOWN } = config.detect(camera);
-  if (!data.predictions) {
-    console.warn('unexpected ai.server predictions data');
-    return [];
-  }
-  const normalized = data.predictions.flatMap((obj) => {
-    const confidence = parseFloat((obj.confidence * 100).toFixed(2));
-    obj.userid = obj.userid ? obj.userid : obj.plate ? obj.plate : 'unknown';
+  const normalized = data.flatMap((obj) => {
+    obj.userid = obj.person ? (obj.person.name ? obj.person.name : 'unknown') : 'unknown';
+    const confidence = obj.userid !== 'unknown' ? 100 : 0;
     const output = {
       name: confidence >= UNKNOWN.CONFIDENCE ? obj.userid.toLowerCase() : 'unknown',
       confidence,
       match:
         obj.userid !== 'unknown' &&
         confidence >= MATCH.CONFIDENCE &&
-        (obj.x_max - obj.x_min) * (obj.y_max - obj.y_min) >= MATCH.MIN_AREA,
+        (obj.boundingBoxX2 - obj.boundingBoxX1) * (obj.boundingBoxY2 - obj.boundingBoxY1) >=
+          MATCH.MIN_AREA,
       box: {
-        top: obj.y_min,
-        left: obj.x_min,
-        width: obj.x_max - obj.x_min,
-        height: obj.y_max - obj.y_min,
+        top: obj.boundingBoxY1,
+        left: obj.boundingBoxX1,
+        width: obj.boundingBoxX2 - obj.boundingBoxX1,
+        height: obj.boundingBoxY2 - obj.boundingBoxY1,
       },
     };
     const checks = actions.checks({ MATCH, UNKNOWN, ...output });
     if (checks.length) output.checks = checks;
     return checks !== false ? output : [];
   });
+
   return normalized;
 };
+
 module.exports = { recognize, train, remove, normalize };

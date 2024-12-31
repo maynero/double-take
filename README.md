@@ -582,13 +582,20 @@ detectors:
     #   - garage
 
   # Very experimental
-  # Limitimations/quirks
+  # Limitations/quirks
   # 1. confidence is either 0 or 100
-  # 2. images uploaded to immich will have Jan 1, 1999 as file creation date so it appears at the bottom
+  # 2. images uploaded to immich are grouped by creation date as specified in *_date_group parameters
   # 3. detection and recognition happens at immich server periodically, double-take poll the image to determine if it found any matches.
+  # 4. only trained images are deleted in immich when deleted in double-take
   immich:
     url:
     key: !secret immich_api_key
+    # delete images on immich after face was detected or recognize
+    delete_on_recognize: true
+    # trained images are under this creation date in immich
+    train_date_group: '1999-01-01T00:00:00.000Z'
+    # recognized images are under this creation date in immich
+    recognize_date_group: '2000-01-01T00:00:00.000Z'
     # number of seconds before the request times out and is aborted
     timeout: 15
     # require opencv to find a face before processing with detector

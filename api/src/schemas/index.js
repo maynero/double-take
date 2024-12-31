@@ -172,6 +172,9 @@ module.exports.config = {
           properties: {
             url: { type: 'string' },
             key: { type: 'string' },
+            delete_on_recognize: { type: 'boolean' },
+            train_date_group: { type: 'string' },
+            recognize_date_group: { type: 'string' },
             opencv_face_required: { type: 'boolean' },
             cameras: { type: 'array' },
           },
