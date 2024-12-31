@@ -580,6 +580,23 @@ detectors:
     # cameras:
     #   - front-door
     #   - garage
+
+  # Very experimental
+  # Limitimations/quirks
+  # 1. confidence is either 0 or 100
+  # 2. images uploaded to immich will have Jan 1, 1999 as file creation date so it appears at the bottom
+  # 3. detection and recognition happens at immich server periodically, double-take poll the image to determine if it found any matches.
+  immich:
+    url:
+    key: !secret immich_api_key
+    # number of seconds before the request times out and is aborted
+    timeout: 15
+    # require opencv to find a face before processing with detector
+    opencv_face_required: false
+    # only process images from specific cameras, if omitted then all cameras will be processed
+    # cameras:
+    #   - front-door
+    #   - garage
 ```
 
 ### `opencv`
