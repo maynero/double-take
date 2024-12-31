@@ -66,6 +66,7 @@ module.exports.matches = async (req, res) => {
         if (detector === 'deepstack') fillStyle = '#d66b11';
         if (detector === 'aiserver') fillStyle = '#f9fc97';
         if (detector === 'facebox') fillStyle = '#5f39a4';
+        if (detector === 'immich') fillStyle = '#a4398d';
 
         ctx.fillStyle = fillStyle;
         if (confidence > 0) {

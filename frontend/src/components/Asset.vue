@@ -346,6 +346,9 @@ export default {
   .icon.facebox {
     background: var(--indigo-600);
   }
+  .icon.immich {
+    background: var(--orange-600);
+  }
 }
 
 .p-badge.clickable {
@@ -466,6 +469,9 @@ img.thumbnail {
 }
 .box.facebox {
   border-color: var(--indigo-600);
+}
+.box.immich {
+  border-color: var(--orange-600);
 }
 
 .p-card {

@@ -4,4 +4,5 @@ module.exports = {
   aiserver: require('./aiserver'),
   facebox: require('./facebox'),
   rekognition: require('./rekognition'),
+  immich: require('./immich'),
 };

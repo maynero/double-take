@@ -114,6 +114,7 @@ module.exports.config = {
         { required: ['aiserver'] },
         { required: ['facebox'] },
         { required: ['rekognition'] },
+        { required: ['immich'] },
       ],
       properties: {
         compreface: {
@@ -161,6 +162,16 @@ module.exports.config = {
             aws_access_key_id: { type: 'string' },
             aws_secret_access_key: { type: 'string' },
             aws_region: { type: 'string' },
+            opencv_face_required: { type: 'boolean' },
+            cameras: { type: 'array' },
+          },
+        },
+        immich: {
+          type: 'object',
+          required: ['url', 'key'],
+          properties: {
+            url: { type: 'string' },
+            key: { type: 'string' },
             opencv_face_required: { type: 'boolean' },
             cameras: { type: 'array' },
           },

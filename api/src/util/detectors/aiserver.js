@@ -56,6 +56,9 @@ const remove = ({ name }) => {
   });
 };
 
+const upload_image = async () =>
+  client.send(new CreateCollectionCommand({ CollectionId: REKOGNITION.COLLECTION_ID }));
+
 const normalize = ({ camera, data }) => {
   if (!data.success) {
     // compare with CoderProjectAI sources
