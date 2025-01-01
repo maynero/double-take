@@ -9,6 +9,12 @@ const config = require('../../constants/config');
 
 const { IMMICH } = DETECTORS || {};
 
+function sleep(time) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, time);
+  });
+}
+
 const generateHeaders = () => {
   return {
     Accept: 'application/json',
@@ -16,7 +22,61 @@ const generateHeaders = () => {
   };
 };
 
-const uploadImage = async (file, dateGroup) => {
+const getJobStatus = async () => {
+  console.verbose('immich: getJobStatus');
+  const response = await axios({
+    method: 'get',
+    timeout: 1000 * 1000,
+    url: `${IMMICH.URL}/api/jobs`,
+    headers: {
+      ...generateHeaders(),
+    },
+  });
+
+  return response.data;
+};
+
+const runJob = async (jobName) => {
+  console.verbose('immich: runJob');
+  let job = await getJobStatus();
+
+  if (!job[jobName].queueStatus.isActive) {
+    console.verbose(`immich: Running ${jobName} job...`);
+    await axios({
+      method: 'put',
+      timeout: 1000 * 1000,
+      url: `${IMMICH.URL}/api/jobs/${jobName}`,
+      headers: {
+        ...generateHeaders(),
+      },
+      data: {
+        command: 'start',
+        force: false,
+      },
+    });
+    job = await getJobStatus();
+  }
+
+  let retry = 1;
+  while (job[jobName].queueStatus.isActive) {
+    console.verbose(`immich: waiting for ${jobName} job to finish...`);
+    await sleep(1000);
+    job = await getJobStatus();
+
+    if (retry >= IMMICH.MAX_RETRIES) {
+      break;
+    }
+
+    retry++;
+  }
+
+  if (job[jobName].queueStatus.isActive) {
+    console.warn(`immich: ${jobName} job did not finish in ${IMMICH.MAX_RETRIES} retries`);
+  }
+};
+
+const uploadAsset = async (file, dateGroup) => {
+  console.verbose('immich: uploadAsset');
   const formData = new FormData();
   formData.append('assetData', fs.createReadStream(file));
   formData.append('deviceId', 'double-take');
@@ -24,7 +84,7 @@ const uploadImage = async (file, dateGroup) => {
   formData.append('fileCreatedAt', dateGroup);
   formData.append('fileModifiedAt', dateGroup);
 
-  const requestConfig = {
+  const response = await axios({
     method: 'post',
     timeout: IMMICH.TIMEOUT * 1000,
     url: `${IMMICH.URL}/api/assets`,
@@ -35,27 +95,33 @@ const uploadImage = async (file, dateGroup) => {
     data: formData,
     maxContentLength: 100000000,
     maxBodyLength: 1000000000,
-  };
+  });
 
-  return axios.request(requestConfig);
+  if (response.data.status !== 'created') {
+    console.warn(`immich uploadAsset status: ${response.data.status}`);
+  }
+
+  return response.data;
 };
 
-const getFaces = (assetId) => {
-  return axios({
+const getFaces = async (assetId) => {
+  console.verbose('immich: getFaces');
+  const response = await axios({
     method: 'get',
     timeout: IMMICH.TIMEOUT * 1000,
     url: `${IMMICH.URL}/api/faces`,
-    params: {
-      id: assetId,
-    },
+    params: { id: assetId },
     headers: {
       ...generateHeaders(),
     },
   });
+  await runJob('library');
+  return response.data;
 };
 
 const getPersons = async (name) => {
-  return axios({
+  console.verbose('immich: getPersons');
+  const response = await axios({
     method: 'get',
     timeout: IMMICH.TIMEOUT * 1000,
     url: `${IMMICH.URL}/api/search/person`,
@@ -67,10 +133,13 @@ const getPersons = async (name) => {
       ...generateHeaders(),
     },
   });
+
+  return response.data;
 };
 
 const createPerson = async (name) => {
-  return axios({
+  console.verbose('immich: createPerson');
+  const response = await axios({
     method: 'post',
     timeout: IMMICH.TIMEOUT * 1000,
     url: `${IMMICH.URL}/api/people`,
@@ -81,9 +150,12 @@ const createPerson = async (name) => {
       name,
     },
   });
+
+  return response.data;
 };
 
-const assignFace = async (faceId, personId) => {
+const assignFace = (faceId, personId) => {
+  console.verbose('immich: assignFace');
   return axios({
     method: 'put',
     timeout: IMMICH.TIMEOUT * 1000,
@@ -97,88 +169,70 @@ const assignFace = async (faceId, personId) => {
   });
 };
 
-const deleteAssets = async (faceIds) => {
-  return axios({
-    method: 'delete',
-    timeout: IMMICH.TIMEOUT * 1000,
-    url: `${IMMICH.URL}/api/assets`,
-    headers: {
-      ...generateHeaders(),
-    },
-    data: {
-      force: true,
-      ids: faceIds,
-    },
-  }).catch((e) => {
-    console.warn(`Unable to delete: ${e.message}`);
-  });
+const deleteAssets = async (assetIds) => {
+  console.verbose('immich: deleteAssets');
+  console.info(`Deleting assets: ${assetIds}`);
+  try {
+    await axios({
+      method: 'delete',
+      timeout: IMMICH.TIMEOUT * 1000,
+      url: `${IMMICH.URL}/api/assets`,
+      headers: {
+        ...generateHeaders(),
+      },
+      data: {
+        force: true,
+        ids: assetIds,
+      },
+    });
+    await runJob('library');
+  } catch (error) {
+    console.warn(`Unable to delete: ${error.message}`);
+  }
 };
 
-function sleep(time) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, time);
-  });
-}
-
 const recognize = async ({ key }) => {
-  let faces;
-  const asset = await uploadImage(key, IMMICH.RECOGNIZE_DATE_GROUP);
-  await sleep(5000);
-
-  for (let i = 0; i < 10; i++) {
-    faces = await getFaces(asset.data.id);
-
-    if (faces.data.length >= 1) {
-      break;
-    }
-
-    // Wait 1000ms before retrying
-    await sleep(1000);
-  }
+  const asset = await uploadAsset(key, IMMICH.RECOGNIZE_DATE_GROUP);
+  await runJob('faceDetection');
+  await runJob('facialRecognition');
+  const faces = await getFaces(asset.id);
 
   // Delete the image in immich after identifying the face
-  if (IMMICH.DELETE_ON_RECOGNIZE) await deleteAssets([asset.data.id]);
+  if (IMMICH.DELETE_ON_RECOGNIZE) await deleteAssets([asset.id]);
 
-  return faces;
+  return {
+    data: faces,
+  };
 };
 
 const train = async ({ name, key }) => {
-  let face;
   let person;
-  const asset = await uploadImage(key, IMMICH.TRAIN_DATE_GROUP);
+  const asset = await uploadAsset(key, IMMICH.TRAIN_DATE_GROUP);
+  await runJob('faceDetection');
+  await runJob('facialRecognition');
+  const faces = await getFaces(asset.id);
 
-  // Faces are determined automatically
-  // Retry API call until faces are detected
-  for (let i = 0; i < 10; i++) {
-    const faces = await getFaces(asset.data.id);
+  for (const face of faces) {
+    [person] = await getPersons(name);
 
-    if (faces.data.length >= 1) {
-      [face] = faces.data;
-      break;
-    }
-
-    // Wait 1000ms before retrying
-    await sleep(1000);
-  }
-
-  // Add handling if no face detected
-  if (face) {
-    const persons = await getPersons(name);
-
-    if (persons.data.length >= 1) {
-      [person] = persons.data;
-    } else {
-      person = (await createPerson(name)).data;
+    if (!person) {
+      person = await createPerson(name);
     }
 
     await assignFace(face.id, person.id);
-    return asset;
+  }
+
+  if (faces.length) {
+    return {
+      status: 200,
+      data: asset,
+    };
   }
 
   return {
     status: 500,
     data: {
-      id: asset.data.id,
+      id: asset.id,
       error: 'No face found in the image',
     },
   };
@@ -186,24 +240,26 @@ const train = async ({ name, key }) => {
 
 const remove = async ({ ids = [] }) => {
   const db = database.connect();
-  const faceIds = !ids.length
+  const assetIds = !ids.length
     ? db
         .prepare(
-          `SELECT name, json_extract(meta, '$.id') faceId
+          `SELECT name, json_extract(meta, '$.id') assetId
            FROM train`
         )
         .all()
-        .map((obj) => obj.faceId)
+        .map((obj) => obj.assetId)
     : db
         .prepare(
-          `SELECT name, json_extract(meta, '$.id') faceId
+          `SELECT name, json_extract(meta, '$.id') assetId
           FROM train
           WHERE fileId IN (${database.params(ids)})`
         )
         .all(ids)
-        .map((obj) => obj.faceId);
+        .map((obj) => obj.assetId);
 
-  if (faceIds.length) await deleteAssets(faceIds);
+  if (assetIds.filter((id) => id).length) {
+    await deleteAssets(assetIds);
+  }
 };
 
 const normalize = ({ camera, data }) => {

@@ -583,10 +583,11 @@ detectors:
 
   # Very experimental
   # Limitations/quirks
-  # 1. confidence is either 0 or 100
+  # 1. since immich is the one recognizing the faces, confidence is either 0 (fail) or 100 (success)
   # 2. images uploaded to immich are grouped by creation date as specified in *_date_group parameters
-  # 3. detection and recognition happens at immich server periodically, double-take poll the image to determine if it found any matches.
-  # 4. only trained images are deleted in immich when deleted in double-take
+  # 3. only trained images are deleted in immich when deleted in double-take
+  # 4. training can be done directly on immich but trained images will not be shown in double-take
+  # 5. DO NOT USE the trained images to manual test the matches, it will cause the trained images to be deleted in immich
   immich:
     url:
     key: !secret immich_api_key
@@ -596,6 +597,9 @@ detectors:
     train_date_group: '1999-01-01T00:00:00.000Z'
     # recognized images are under this creation date in immich
     recognize_date_group: '2000-01-01T00:00:00.000Z'
+    # number of retries until double-take gave up on waiting for immich facial detection and recognition to finish
+    # this can be increased as needed if detection and recognition is failing
+    max_retries: 10
     # number of seconds before the request times out and is aborted
     timeout: 15
     # require opencv to find a face before processing with detector

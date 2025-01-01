@@ -175,6 +175,7 @@ module.exports.config = {
             delete_on_recognize: { type: 'boolean' },
             train_date_group: { type: 'string' },
             recognize_date_group: { type: 'string' },
+            max_retries: { type: 'number' },
             opencv_face_required: { type: 'boolean' },
             cameras: { type: 'array' },
           },

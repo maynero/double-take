@@ -74,6 +74,7 @@ module.exports = {
       delete_on_recognize: true,
       train_date_group: '1999-01-01T00:00:00.000Z',
       recognize_date_group: '2000-01-01T00:00:00.000Z',
+      max_retries: 10,
       timeout: 15,
       opencv_face_required: false,
     },
