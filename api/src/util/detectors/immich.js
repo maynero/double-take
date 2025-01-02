@@ -239,25 +239,31 @@ const train = async ({ name, key }) => {
   };
 };
 
-const remove = async ({ ids = [] }) => {
+const remove = async ({ name, ids = [] }) => {
   console.verbose('immich: remove');
+  console.debug('Removing immich assets:', name, ids);
   const db = database.connect();
-  const assetIds = !ids.length
-    ? db
-        .prepare(
-          `SELECT name, json_extract(meta, '$.id') assetId
-           FROM train`
-        )
-        .all()
-        .map((obj) => obj.assetId)
-    : db
-        .prepare(
-          `SELECT name, json_extract(meta, '$.id') assetId
-          FROM train
-          WHERE fileId IN (${database.params(ids)})`
-        )
-        .all(ids)
-        .map((obj) => obj.assetId);
+  let assetIds = [];
+
+  if (ids.length) {
+    assetIds = db
+      .prepare(
+        `SELECT json_extract(meta, '$.id') assetId
+         FROM train
+         WHERE fileId IN (${database.params(ids)})`
+      )
+      .all(ids)
+      .map((obj) => obj.assetId);
+  } else if (name) {
+    assetIds = db
+      .prepare(
+        `SELECT json_extract(meta, '$.id') assetId
+         FROM train
+         WHERE name = ?`
+      )
+      .all(name)
+      .map((obj) => obj.assetId);
+  }
 
   if (assetIds.filter((id) => id).length) {
     await deleteAssets(assetIds);
