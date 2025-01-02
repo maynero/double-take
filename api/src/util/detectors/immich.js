@@ -26,7 +26,7 @@ const getJobStatus = async () => {
   console.verbose('immich: getJobStatus');
   const response = await axios({
     method: 'get',
-    timeout: 1000 * 1000,
+    timeout: IMMICH.TIMEOUT * 1000,
     url: `${IMMICH.URL}/api/jobs`,
     headers: {
       ...generateHeaders(),
@@ -42,9 +42,9 @@ const runJob = async (jobName) => {
 
   if (!job[jobName].queueStatus.isActive) {
     console.verbose(`immich: Running ${jobName} job...`);
-    await axios({
+    const newJob = await axios({
       method: 'put',
-      timeout: 1000 * 1000,
+      timeout: IMMICH.TIMEOUT * 1000,
       url: `${IMMICH.URL}/api/jobs/${jobName}`,
       headers: {
         ...generateHeaders(),
@@ -54,7 +54,7 @@ const runJob = async (jobName) => {
         force: false,
       },
     });
-    job = await getJobStatus();
+    job[jobName] = newJob.data;
   }
 
   let retry = 1;
@@ -171,7 +171,7 @@ const assignFace = (faceId, personId) => {
 
 const deleteAssets = async (assetIds) => {
   console.verbose('immich: deleteAssets');
-  console.info(`Deleting assets: ${assetIds}`);
+  console.debug(`Deleting assets: ${assetIds}`);
   try {
     await axios({
       method: 'delete',
@@ -192,6 +192,7 @@ const deleteAssets = async (assetIds) => {
 };
 
 const recognize = async ({ key }) => {
+  console.verbose('immich: recognize');
   const asset = await uploadAsset(key, IMMICH.RECOGNIZE_DATE_GROUP);
   await runJob('faceDetection');
   await runJob('facialRecognition');
@@ -206,14 +207,14 @@ const recognize = async ({ key }) => {
 };
 
 const train = async ({ name, key }) => {
-  let person;
+  console.verbose('immich: train');
   const asset = await uploadAsset(key, IMMICH.TRAIN_DATE_GROUP);
   await runJob('faceDetection');
   await runJob('facialRecognition');
   const faces = await getFaces(asset.id);
 
   for (const face of faces) {
-    [person] = await getPersons(name);
+    let [person] = await getPersons(name);
 
     if (!person) {
       person = await createPerson(name);
@@ -239,6 +240,7 @@ const train = async ({ name, key }) => {
 };
 
 const remove = async ({ ids = [] }) => {
+  console.verbose('immich: remove');
   const db = database.connect();
   const assetIds = !ids.length
     ? db
